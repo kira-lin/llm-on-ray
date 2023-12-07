@@ -72,7 +72,7 @@ class TransformerPredictor(Predictor):
         self.model = model
         self.stopping_criteria = stopping_criteria
 
-    def _process_config(self, **config):
+    def _process_config(self, config):
         if self.device.type == "hpu":
             if "max_new_tokens" not in config:
                 # hpu requires setting max_new_tokens
@@ -83,14 +83,14 @@ class TransformerPredictor(Predictor):
                 config["lazy_mode"] = True
 
     def streaming_generate(self, inputs, streamer, **config):
-        self._process_config(**config)
+        self._process_config(config)
         self.model.generate(**inputs,
                     stopping_criteria=self.stopping_criteria,
                     streamer=streamer,
                     **config)
 
     def generate(self, inputs, **config):
-        self._process_config(**config)
+        self._process_config(config)
         gen_tokens = self.model.generate(
             **inputs,
             stopping_criteria=self.stopping_criteria,

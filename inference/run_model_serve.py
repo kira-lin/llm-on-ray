@@ -110,14 +110,14 @@ class PredictDeployment:
         if self.device.type == "hpu":
             input_tokens_no_pad = self.tokenizer(text, return_tensors="pt")
             input_token_len = input_tokens_no_pad.input_ids.shape[-1]
-            input_tokens = self.tokenizer.batch_encode_plus(
+            input_tokens = self.tokenizer(
                 text,
                 return_tensors="pt",
                 padding="max_length",
                 max_length=max_input_len(input_token_len),
             )
         else:
-            input_tokens = self.tokenizer.batch_encode_plus(
+            input_tokens = self.tokenizer(
                 text, return_tensors="pt", padding=True
             )
             input_token_len = input_tokens.input_ids.shape[-1]
