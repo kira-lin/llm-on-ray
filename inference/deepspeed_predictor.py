@@ -125,6 +125,9 @@ class PredictionWorker(TorchDistributedWorker):
 
 class DeepSpeedPredictor(Predictor):
     def __init__(self, inferenceConfig: InferenceConfig, amp_dtype, pad_token_id, stopping_criteria) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(inferenceConfig.model_description.tokenizer_name_or_path)
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.inferenceConfig = inferenceConfig
         self.amp_dtype = amp_dtype
         self.pad_token_id = pad_token_id
@@ -195,14 +198,16 @@ class DeepSpeedPredictor(Predictor):
             for worker, local_rank in zip(self.prediction_workers, local_ranks)
         ])
 
-    def streaming_generate(self, inputs, streamer, **config):
-        inputs_ref = ray.put(inputs)
+    def streaming_generate(self, prompt, streamer, **config):
+        input_ids = self.tokenize_inputs(prompt)
+        inputs_ref = ray.put(input_ids)
         self.prediction_workers[0].streaming_generate.remote(inputs_ref, streamer, **config)
         for worker in self.prediction_workers[1:]:
                 worker.streaming_generate.remote(inputs_ref, self._create_dummy_streamer(), **config)
 
-    def generate(self, inputs, **config):
-        inputs_ref = ray.put(inputs)
+    def generate(self, prompt, **config):
+        input_ids = self.tokenize_inputs(prompt)
+        inputs_ref = ray.put(input_ids)
         prediction = ray.get(
             [
                 worker.generate.remote(inputs_ref, **config)

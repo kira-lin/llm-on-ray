@@ -1,10 +1,13 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from inference_config import InferenceConfig
 from predictor import Predictor
 
 class TransformerPredictor(Predictor):
     def __init__(self, inferenceConfig: InferenceConfig, amp_dtype, stopping_criteria):
+        self.tokenizer = AutoTokenizer.from_pretrained(inferenceConfig.model_description.tokenizer_name_or_path)
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.amp_dtype = amp_dtype
         self.device = torch.device(inferenceConfig.device)
         model_desc = inferenceConfig.model_description
@@ -82,17 +85,19 @@ class TransformerPredictor(Predictor):
                 # lazy mode should be True when using hpu graphs
                 config["lazy_mode"] = True
 
-    def streaming_generate(self, inputs, streamer, **config):
+    def streaming_generate(self, prompt, streamer, **config):
         self._process_config(config)
-        self.model.generate(**inputs,
+        input_ids, _ = self.tokenize_inputs(prompt)
+        self.model.generate(input_ids,
                     stopping_criteria=self.stopping_criteria,
                     streamer=streamer,
                     **config)
 
-    def generate(self, inputs, **config):
+    def generate(self, prompt, **config):
         self._process_config(config)
+        input_ids, _ = self.tokenize_inputs(prompt)
         gen_tokens = self.model.generate(
-            **inputs,
+            input_ids,
             stopping_criteria=self.stopping_criteria,
             **config
         )

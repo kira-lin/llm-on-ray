@@ -29,24 +29,10 @@ class StoppingCriteriaSub(StoppingCriteria):
                 return True
         return False
 
-def max_input_len(input_text_length):
-    if input_text_length <= 128:
-        return 128
-    elif input_text_length <= 512:
-        return 512
-    elif input_text_length <= 2048:
-        return 2048
-    else:
-        print("Max support length is 4096")
-        return 4096
-
 @serve.deployment
 class PredictDeployment:
     def __init__(self, inferenceConfig: InferenceConfig):
         self.device = torch.device(inferenceConfig.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(inferenceConfig.model_description.tokenizer_name_or_path)
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.process_tool = None
         chat_processor_name = inferenceConfig.model_description.chat_processor
         prompt = inferenceConfig.model_description.prompt
@@ -67,13 +53,10 @@ class PredictDeployment:
             # now deepspeed predictor don't have the model
             # this should be solved in the next pr
             # where it is also a worker
-            if self.tokenizer.pad_token_id is None:
-                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             self.predictor = DeepSpeedPredictor(inferenceConfig, self.amp_dtype, self.tokenizer.pad_token_id, self.stopping_criteria)
         else:
             from transformer_predictor import TransformerPredictor
             self.predictor = TransformerPredictor(inferenceConfig, self.amp_dtype, self.stopping_criteria)
-            self.predictor.configure_tokenizer(inferenceConfig.model_description.model_id_or_path, self.tokenizer)
         self.loop = asyncio.get_running_loop()
 
     def create_streamer(self):
@@ -106,35 +89,13 @@ class PredictDeployment:
                     return value
         return RayTextIteratorStreamer(self.tokenizer, skip_special_tokens=True)
 
-    def tokenize_inputs(self, text: List[str]):
-        if self.device.type == "hpu":
-            input_tokens_no_pad = self.tokenizer(text, return_tensors="pt")
-            input_token_len = input_tokens_no_pad.input_ids.shape[-1]
-            input_tokens = self.tokenizer(
-                text,
-                return_tensors="pt",
-                padding="max_length",
-                max_length=max_input_len(input_token_len),
-            )
-        else:
-            input_tokens = self.tokenizer(
-                text, return_tensors="pt", padding=True
-            )
-            input_token_len = input_tokens.input_ids.shape[-1]
-        inputs = {k: v.to(device=self.device) \
-                  for k,v in input_tokens.items() \
-                  if torch.is_tensor(v)}
-        return inputs, input_token_len
-
     def predict(self, text: List[str], **config) -> str:
-        inputs, _ = self.tokenize_inputs(text)
-        gen_tokens = self.predictor.generate(inputs, **config)
+        gen_tokens = self.predictor.generate(text, **config)
         return self.tokenizer.batch_decode(gen_tokens, skip_special_tokens=True)[0]
 
     def predict_stream(self, text: List[str], streamer: TextIteratorStreamer, **config) -> Generator[str, None, None]:
         # with torch.cpu.amp.autocast(enabled=self.amp_enabled, dtype=self.amp_dtype):
-        inputs, _ = self.tokenize_inputs(text)
-        self.predictor.streaming_generate(inputs, streamer, **config)
+        self.predictor.streaming_generate(text, streamer, **config)
     
     def consume_streamer(self):
         for text in self.streamer:
@@ -155,18 +116,17 @@ class PredictDeployment:
     async def __call__(self, http_request: Request) -> Union[StreamingResponse, str]:
         json_request: str = await http_request.json()
         prompts = []
-        for prompt in json_request:
-            text = prompt["text"]
-            config = prompt["config"]  if "config" in prompt else {}
-            streaming_response = prompt["stream"]
-            if isinstance(text, list):
-                if self.process_tool is not None:
-                    prompt = self.process_tool.get_prompt(text)
-                    prompts.append(prompt)
-                else:
-                    prompts.extend(text)
+        text = json_request["text"]
+        config = json_request["config"]  if "config" in json_request else {}
+        streaming_response = json_request["stream"]
+        if isinstance(text, list):
+            if self.process_tool is not None:
+                prompt = self.process_tool.get_prompt(text)
+                prompts.append(prompt)
             else:
-                prompts.append(text)
+                prompts.extend(text)
+        else:
+            prompts.append(text)
         if not streaming_response:
             return self.predict(prompts, **config)
         if self.use_deepspeed:
