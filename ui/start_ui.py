@@ -689,7 +689,10 @@ class ChatBotUI:
     def exec_command(self, index, command, ray=False):
         if not self.container_mode:
             if ray:
-                command = f"conda activate {self.conda_env_name}; " + command
+                import shutil
+
+                if shutil.which("conda"):
+                    command = f"conda activate {self.conda_env_name}; " + command
             _, stdout, stderr = self.ssh_connect[index].exec_command(command)
             return stdout.read().decode("utf-8"), stderr.read().decode("utf-8")
         else:
@@ -713,8 +716,8 @@ class ChatBotUI:
         if not self.container_mode:
             cpu_command = f"export TERM=xterm; echo $({cpu_command} | head -n 4 | tail -n 2)"
         cpu_out, _ = self.exec_command(index, cpu_command)
-        if self.container_mode:
-            cpu_out = cpu_out.split("\n")[2]
+        # if self.container_mode:
+        cpu_out = cpu_out.split("\n")[2]
         cpu_out_words = cpu_out.split()
         cpu_value = 100 - float(cpu_out_words[7])
         memory_command = "free -m"
@@ -823,13 +826,13 @@ class ChatBotUI:
                 node_ip = self.ray_nodes[index]["NodeName"]
                 self.ssh_connect[index] = paramiko.SSHClient()
                 self.ssh_connect[index].load_system_host_keys()
-                self.ssh_connect[index].set_missing_host_key_policy(paramiko.RejectPolicy())
+                self.ssh_connect[index].set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 self.ssh_connect[index].connect(
                     hostname=node_ip, port=self.node_port, username=self.user_name
                 )
             self.ssh_connect[-1] = paramiko.SSHClient()
             self.ssh_connect[-1].load_system_host_keys()
-            self.ssh_connect[-1].set_missing_host_key_policy(paramiko.RejectPolicy())
+            self.ssh_connect[-1].set_missing_host_key_policy(paramiko.AutoAddPolicy())
             self.ssh_connect[-1].connect(
                 hostname=self.ray_nodes[mark_alive]["NodeName"],
                 port=self.node_port,
