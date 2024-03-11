@@ -25,8 +25,7 @@ class General(BaseModel):
     base_model: str
     gpt_base_model: bool
     output_dir: str
-    checkpoint_dir: str
-    tracking_dir: str
+    checkpoint_dir: Optional[str]
     config: GeneralConfig
     lora_config: Optional[LoraConfig] = None
     deltatuner_config: Optional[DeltatunerConfig] = None
@@ -42,6 +41,7 @@ class Dataset(BaseModel):
 class RayResourceConfig(BaseModel):
     CPU: int
     GPU: int = 0
+    HPU: int = 0
 
 
 class Training(BaseModel):
@@ -56,21 +56,29 @@ class Training(BaseModel):
     resources_per_worker: RayResourceConfig
     accelerate_mode: str
     mixed_precision: str = "no"
-    gradient_accumulation_steps: int
+    gradient_accumulation_steps: int = 1
     logging_steps: int = 10
+    deepspeed_config_file: str = ""
 
     @validator("device")
     def check_device(cls, v: str):
-        devices = ["CPU", "GPU"]
+        devices = ["CPU", "GPU", "HPU"]
         if v not in devices:
             raise ValueError(f"device must be one of {devices}")
         return v
 
     @validator("accelerate_mode")
     def check_accelerate_mode(cls, v: str):
-        modes = ["CPU_DDP", "GPU_DDP", "GPU_FSDP"]
+        modes = ["CPU_DDP", "GPU_DDP", "GPU_FSDP", "HPU_DDP", "GPU_DEEPSPEED"]
         if v not in modes:
             raise ValueError(f"accelerate_mode must be one of {modes}")
+        return v
+
+    @validator("mixed_precision")
+    def check_mixed_precision(cls, v: str):
+        supported_precisions = ["no", "fp16", "bf16"]
+        if v not in supported_precisions:
+            raise ValueError(f"mixed_precision must be one of {supported_precisions}")
         return v
 
     @validator("logging_steps")

@@ -1,0 +1,16 @@
+FROM vault.habana.ai/gaudi-docker/1.14.0/ubuntu22.04/habanalabs/pytorch-installer-2.1.1:latest
+
+ENV LANG=en_US.UTF-8
+
+COPY . /root/llm-on-ray
+
+WORKDIR /root/llm-on-ray
+
+RUN pip install -e . && \
+    pip install --upgrade-strategy eager optimum[habana]
+
+# Optinal. Comment out if you are not using UI
+COPY ./dev/scripts/install-ui.sh /tmp
+
+RUN sh /tmp/install-ui.sh
+
